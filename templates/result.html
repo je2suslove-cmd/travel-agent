@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ info.destination }} 여행 일정</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --primary: #3B82F6;
+      --primary-dark: #1D4ED8;
+      --success: #10B981;
+      --warning: #F59E0B;
+      --danger: #EF4444;
+      --surface: #fff;
+      --bg: #F1F5F9;
+      --text: #0F172A;
+      --muted: #64748B;
+      --border: #E2E8F0;
+      --radius: 14px;
+      --shadow: 0 2px 8px rgba(0,0,0,.07);
+      --shadow-md: 0 4px 16px rgba(0,0,0,.1);
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg); color: var(--text); line-height: 1.6;
+    }
+
+    /* ── 상단 바 ── */
+    .topbar {
+      background: #fff; border-bottom: 1px solid var(--border);
+      padding: 0 20px; height: 56px;
+      display: flex; align-items: center; justify-content: space-between;
+      position: sticky; top: 0; z-index: 100;
+    }
+    .topbar a { text-decoration: none; color: var(--primary); font-weight: 600; font-size: .9rem; }
+    .topbar a:hover { text-decoration: underline; }
+    .topbar-title { font-weight: 700; font-size: 1rem; color: var(--text); }
+
+    /* ── 히어로 ── */
+    .hero {
+      background: linear-gradient(135deg, #1D4ED8 0%, #0EA5E9 60%, #06B6D4 100%);
+      color: #fff; padding: 40px 20px 36px; text-align: center;
+    }
+    .hero h1 { font-size: 2rem; font-weight: 800; letter-spacing: -1px; }
+    .hero p   { margin-top: 6px; opacity: .85; font-size: 1rem; }
+    .hero-tags { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 16px; }
+    .tag {
+      background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.3);
+      border-radius: 20px; padding: 4px 12px; font-size: .82rem; font-weight: 500;
+    }
+    .budget-ok   { background: rgba(16,185,129,.3); border-color: rgba(16,185,129,.5); }
+    .budget-over { background: rgba(239,68,68,.3);  border-color: rgba(239,68,68,.5); }
+
+    /* ── 레이아웃 ── */
+    .container { max-width: 1100px; margin: 0 auto; padding: 28px 16px 60px; }
+
+    .section { margin-bottom: 28px; }
+    .section-title {
+      font-size: 1rem; font-weight: 700; color: var(--muted);
+      text-transform: uppercase; letter-spacing: .6px;
+      margin-bottom: 12px; display: flex; align-items: center; gap: 8px;
+    }
+    .section-title .icon { font-size: 1.1rem; }
+
+    /* ── 카드 ── */
+    .card {
+      background: var(--surface); border-radius: var(--radius);
+      box-shadow: var(--shadow); overflow: hidden;
+    }
+    .card-inner { padding: 20px; }
+
+    /* ── 비용 요약 ── */
+    .cost-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+    @media (min-width: 640px) { .cost-grid { grid-template-columns: repeat(4, 1fr); } }
+    .cost-cell {
+      background: var(--bg); border-radius: 10px; padding: 14px;
+      text-align: center;
+    }
+    .cost-cell .val { font-size: 1.15rem; font-weight: 800; color: var(--text); }
+    .cost-cell .lbl { font-size: .75rem; color: var(--muted); margin-top: 2px; }
+    .cost-ok   .val { color: var(--success); }
+    .cost-over .val { color: var(--danger); }
+
+    /* ── 항공 / 호텔 그리드 ── */
+    .two-col { display: grid; grid-template-columns: 1fr; gap: 16px; }
+    @media (min-width: 720px) { .two-col { grid-template-columns: 1fr 1fr; } }
+
+    .flight-card, .hotel-card {
+      background: var(--surface); border-radius: var(--radius);
+      box-shadow: var(--shadow); padding: 18px 20px;
+      border: 2px solid transparent; transition: border-color .15s;
+    }
+    .flight-card.selected, .hotel-card.selected { border-color: var(--primary); }
+
+    .flight-card .route { font-size: 1.1rem; font-weight: 700; }
+    .flight-card .meta  { font-size: .82rem; color: var(--muted); margin-top: 4px; }
+    .flight-card .price { font-size: 1.2rem; font-weight: 800; color: var(--primary); margin-top: 10px; }
+    .selected-badge {
+      display: inline-block; background: var(--primary); color: #fff;
+      font-size: .7rem; font-weight: 700; border-radius: 4px;
+      padding: 2px 7px; margin-left: 8px; vertical-align: middle;
+    }
+
+    .stars { color: #F59E0B; font-size: .9rem; }
+    .hotel-card .name   { font-size: 1rem; font-weight: 700; margin-top: 4px; }
+    .hotel-card .loc    { font-size: .82rem; color: var(--muted); margin-top: 2px; }
+    .hotel-card .price  { font-size: 1.1rem; font-weight: 800; color: var(--primary); margin-top: 10px; }
+    .hotel-card .amenities { font-size: .78rem; color: var(--muted); margin-top: 6px; }
+    .booking-link { display: inline-block; margin-top: 10px; font-size: .8rem; font-weight: 600; color: #0369A1; text-decoration: none; }
+    .booking-link:hover { text-decoration: underline; }
+    .ppn-ok   .price { color: var(--success); }
+    .ppn-over .price { color: var(--warning); }
+
+    /* ── 날씨 ── */
+    .weather-scroll {
+      display: flex; gap: 10px; overflow-x: auto; padding-bottom: 4px;
+    }
+    .weather-scroll::-webkit-scrollbar { height: 4px; }
+    .weather-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+    .weather-cell {
+      flex: 0 0 90px; background: var(--surface); border-radius: 12px;
+      box-shadow: var(--shadow); padding: 14px 10px; text-align: center;
+    }
+    .weather-cell .date  { font-size: .72rem; color: var(--muted); font-weight: 600; }
+    .weather-cell .desc  { font-size: .78rem; margin: 6px 0; font-weight: 500; }
+    .weather-cell .temps { font-size: .82rem; }
+    .weather-cell .t-max { color: var(--danger); font-weight: 700; }
+    .weather-cell .t-min { color: var(--primary); font-weight: 600; }
+    .weather-cell .rain  { font-size: .7rem; color: #0EA5E9; margin-top: 4px; }
+
+    .clothing-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+    .chip {
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: 20px; padding: 5px 12px;
+      font-size: .82rem; color: var(--text);
+    }
+    .chip.warn { background: #FFF7ED; border-color: #FED7AA; color: #C2410C; }
+
+    /* ── 일정 타임라인 ── */
+    .day-list { display: flex; flex-direction: column; gap: 14px; }
+    .day-card  {
+      background: var(--surface); border-radius: var(--radius);
+      box-shadow: var(--shadow); overflow: hidden;
+    }
+    .day-header {
+      display: flex; align-items: center; gap: 12px;
+      padding: 14px 20px; background: #F8FAFF;
+      border-bottom: 1px solid var(--border); cursor: pointer;
+    }
+    .day-num {
+      width: 34px; height: 34px; background: var(--primary); color: #fff;
+      border-radius: 50%; display: flex; align-items: center; justify-content: center;
+      font-weight: 800; font-size: .9rem; flex-shrink: 0;
+    }
+    .day-info { flex: 1; }
+    .day-info .d-title { font-weight: 700; font-size: .95rem; }
+    .day-info .d-meta  { font-size: .78rem; color: var(--muted); margin-top: 1px; }
+    .day-weather { font-size: .8rem; color: var(--muted); text-align: right; line-height: 1.4; }
+    .chevron { color: var(--muted); transition: transform .2s; font-size: 1rem; }
+    .day-card.open .chevron { transform: rotate(180deg); }
+
+    .day-body { display: none; padding: 16px 20px; }
+    .day-card.open .day-body { display: block; }
+    .schedule-row {
+      display: grid; grid-template-columns: 80px 1fr; gap: 8px 14px;
+      padding: 7px 0; border-bottom: 1px solid var(--border); font-size: .88rem;
+    }
+    .schedule-row:last-of-type { border-bottom: none; }
+    .s-label { color: var(--muted); font-weight: 600; white-space: nowrap; }
+    .s-cost {
+      margin-top: 10px; padding: 8px 12px;
+      background: #F0FDF4; border-radius: 8px;
+      font-size: .82rem; color: var(--success); font-weight: 600;
+    }
+
+    /* ── 장소 카드 ── */
+    .places-grid { display: grid; grid-template-columns: 1fr; gap: 12px; }
+    @media (min-width: 640px)  { .places-grid { grid-template-columns: 1fr 1fr; } }
+    @media (min-width: 1000px) { .places-grid { grid-template-columns: 1fr 1fr 1fr; } }
+
+    .place-card {
+      background: var(--surface); border-radius: var(--radius);
+      box-shadow: var(--shadow); padding: 16px 18px;
+    }
+    .place-card .p-name   { font-weight: 700; font-size: .92rem; }
+    .place-card .p-addr   { font-size: .78rem; color: var(--muted); margin-top: 4px; }
+    .place-card .p-rating {
+      display: inline-flex; align-items: center; gap: 4px;
+      margin-top: 8px; background: #FFFBEB; border-radius: 6px;
+      padding: 3px 8px; font-size: .8rem; font-weight: 700; color: #92400E;
+    }
+    .p-price { margin-left: 6px; font-size: .75rem; color: var(--muted); font-weight: 400; }
+
+    /* ── 팁 / 짐 ── */
+    .tip-list, .pack-list { list-style: none; display: flex; flex-direction: column; gap: 8px; }
+    .tip-list li, .pack-list li {
+      display: flex; align-items: flex-start; gap: 10px;
+      font-size: .88rem; padding: 8px 0; border-bottom: 1px solid var(--border);
+    }
+    .tip-list li:last-child, .pack-list li:last-child { border-bottom: none; }
+
+    /* ── 현지 정보 ── */
+    .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    @media (min-width: 640px) { .info-grid { grid-template-columns: repeat(3, 1fr); } }
+    .info-cell {
+      background: var(--bg); border-radius: 10px; padding: 14px;
+    }
+    .info-cell .i-label { font-size: .72rem; color: var(--muted); font-weight: 600; text-transform: uppercase; }
+    .info-cell .i-val   { font-size: .85rem; margin-top: 4px; font-weight: 500; }
+
+    /* ── 새 여행 버튼 ── */
+    .new-plan-btn {
+      display: block; width: 100%; max-width: 360px; margin: 32px auto 0;
+      padding: 15px; background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+      color: #fff; font-size: 1rem; font-weight: 700; border: none;
+      border-radius: 10px; cursor: pointer; text-align: center; text-decoration: none;
+      box-shadow: 0 4px 14px rgba(59,130,246,.4); transition: all .15s;
+    }
+    .new-plan-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(59,130,246,.5); }
+
+    .no-places {
+      background: var(--surface); border-radius: var(--radius); padding: 28px;
+      text-align: center; color: var(--muted); font-size: .9rem; box-shadow: var(--shadow);
+    }
+  </style>
+</head>
+<body>
+
+<!-- 상단 바 -->
+<div class="topbar">
+  <a href="/">← 새 여행 계획</a>
+  <span class="topbar-title">AI 여행 플래너</span>
+  <span></span>
+</div>
+
+<!-- 히어로 -->
+<div class="hero">
+  <h1>{{ info.destination }} ✈️</h1>
+  <p>{{ info.origin }} 출발 · {{ info.start_date }} ~ {{ info.end_date }}</p>
+  <div class="hero-tags">
+    <span class="tag">{{ info.nights }}박 {{ itinerary.total_days }}일</span>
+    <span class="tag">{{ info.passengers }}명</span>
+    <span class="tag">{{ info.style }}</span>
+    {% if costs.over_budget %}
+    <span class="tag budget-over">⚠️ 예산 {{ "{:,}".format(costs.difference) }}원 초과</span>
+    {% else %}
+    <span class="tag budget-ok">✅ 예산 {{ "{:,}".format(costs.difference) }}원 여유</span>
+    {% endif %}
+  </div>
+</div>
+
+<div class="container">
+
+  <!-- 비용 요약 -->
+  <div class="section">
+    <div class="section-title"><span class="icon">💰</span>비용 요약</div>
+    <div class="card">
+      <div class="card-inner">
+        <div class="cost-grid">
+          <div class="cost-cell">
+            <div class="val">{{ "{:,}".format(costs.flight) }}원</div>
+            <div class="lbl">✈️ 항공권 ({{ info.passengers }}명)</div>
+          </div>
+          <div class="cost-cell">
+            <div class="val">{{ "{:,}".format(costs.hotel) }}원</div>
+            <div class="lbl">🏨 숙박 ({{ info.nights }}박)</div>
+          </div>
+          <div class="cost-cell">
+            <div class="val">{{ "{:,}".format(costs.misc) }}원</div>
+            <div class="lbl">🍽️ 식비·교통·관광</div>
+          </div>
+          <div class="cost-cell {% if costs.over_budget %}cost-over{% else %}cost-ok{% endif %}">
+            <div class="val">{{ "{:,}".format(costs.total) }}원</div>
+            <div class="lbl">합계 / 예산 {{ "{:,}".format(costs.budget) }}원</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 항공편 -->
+  <div class="section">
+    <div class="section-title"><span class="icon">✈️</span>항공편</div>
+    <div class="two-col">
+      {% for f in flights %}
+      <div class="flight-card {% if f == selected_flight %}selected{% endif %}">
+        <div>
+          <span style="font-size:.8rem;color:var(--muted);font-weight:600;">{{ f.airline }} {{ f.flight_no }}</span>
+          {% if f == selected_flight %}<span class="selected-badge">선택됨</span>{% endif %}
+        </div>
+        <div class="route">{{ f.departure }} → {{ f.arrival }}</div>
+        <div class="meta">출발 {{ f.dep_time }} · 도착 {{ f.arr_time }} · 소요 {{ f.duration }} · 잔여 {{ f.seats_left }}석</div>
+        <div class="price">{{ "{:,}".format(f.price) }}원</div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- 호텔 -->
+  <div class="section">
+    <div class="section-title"><span class="icon">🏨</span>호텔</div>
+    <div class="two-col">
+      {% for h in hotels %}
+      <div class="hotel-card {% if h == selected_hotel %}selected{% endif %} {% if h.price_per_night <= ppn_budget %}ppn-ok{% else %}ppn-over{% endif %}">
+        <div>
+          <span class="stars">{{ '★' * h.stars }}{{ '☆' * (5 - h.stars) }}</span>
+          {% if h == selected_hotel %}<span class="selected-badge">선택됨</span>{% endif %}
+        </div>
+        <div class="name">{{ h.name }}</div>
+        <div class="loc">📍 {{ h.location }} · 평점 {{ h.rating }}/5.0</div>
+        <div class="price">{{ "{:,}".format(h.price_per_night) }}원/박 → {{ "{:,}".format(h.total_price) }}원</div>
+        <div class="amenities">{{ h.amenities | join(' · ') }}</div>
+        <a class="booking-link" href="https://www.booking.com/search.html?ss={{ (h.name + ' ' + info.destination) | urlquote }}" target="_blank" rel="noopener">🔍 Booking.com에서 검색</a>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- 날씨 -->
+  <div class="section">
+    <div class="section-title"><span class="icon">🌤</span>날씨
+      {% if weather_days %}
+        {% if weather_days[0].is_archive %}
+        <span style="font-size:.75rem;font-weight:400;color:var(--muted);margin-left:8px;">전년 동기 기후 참고</span>
+        {% else %}
+        <span style="font-size:.75rem;font-weight:400;color:var(--success);margin-left:8px;">실시간 예보</span>
+        {% endif %}
+      {% endif %}
+    </div>
+    <div class="card">
+      <div class="card-inner">
+        {% if weather_days and weather_days[0].is_archive %}
+        <p style="font-size:.8rem;color:var(--muted);margin-bottom:12px;">ℹ️ 예보 범위(16일) 초과 — 작년 같은 기간 실측값으로 기후 경향을 보여드립니다.</p>
+        {% endif %}
+        {% if weather_days %}
+        <div class="weather-scroll">
+          {% for w in weather_days %}
+          <div class="weather-cell">
+            <div class="date">{{ w.date[5:] }}</div>
+            <div class="desc">{{ w.description }}</div>
+            <div class="temps">
+              <span class="t-max">{{ w.temp_max | int }}°</span>
+              <span style="color:var(--muted)"> / </span>
+              <span class="t-min">{{ w.temp_min | int }}°</span>
+            </div>
+            {% if w.precipitation > 0.5 %}
+            <div class="rain">🌧 {{ "%.1f"|format(w.precipitation) }}mm</div>
+            {% endif %}
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <p style="color:var(--muted);font-size:.88rem;">ℹ️ 날씨 정보 없음 — 출발일이 16일 이상 남았거나 네트워크 오류입니다.</p>
+        {% endif %}
+
+        {% if clothing %}
+        <div style="margin-top:16px;">
+          <div style="font-size:.8rem;font-weight:700;color:var(--muted);margin-bottom:8px;">👕 옷차림 추천</div>
+          <div class="clothing-chips">
+            {% for c in clothing %}
+            <span class="chip {% if '⚠️' in c or '주의' in c %}warn{% endif %}">{{ c }}</span>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- 일정 -->
+  <div class="section">
+    <div class="section-title"><span class="icon">📅</span>여행 일정</div>
+    <div class="day-list">
+      {% for day in itinerary.days %}
+      <div class="day-card {% if loop.first %}open{% endif %}" onclick="toggleDay(this)">
+        <div class="day-header">
+          <div class="day-num">{{ day.day_num }}</div>
+          <div class="day-info">
+            <div class="d-title">{{ day.title }}</div>
+            <div class="d-meta">{{ day.date }}</div>
+          </div>
+          {% if day.weather %}
+          <div class="day-weather">
+            {{ day.weather.description }}<br>
+            <span style="color:var(--danger);font-weight:700;">{{ day.weather.temp_max | int }}°</span>
+            / <span style="color:var(--primary);">{{ day.weather.temp_min | int }}°</span>
+          </div>
+          {% endif %}
+          <span class="chevron">▾</span>
+        </div>
+        <div class="day-body">
+          <div class="schedule-row"><span class="s-label">🌅 오전</span><span>{{ day.morning }}</span></div>
+          <div class="schedule-row"><span class="s-label">☀️ 오후</span><span>{{ day.afternoon }}</span></div>
+          <div class="schedule-row"><span class="s-label">🌆 저녁</span><span>{{ day.evening }}</span></div>
+          <div class="schedule-row"><span class="s-label">🌙 야간</span><span>{{ day.night }}</span></div>
+          <div class="s-cost">💸 예상 비용: {{ day.cost }}</div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- 음식점 (Google Places) -->
+  <div class="section">
+    <div class="section-title"><span class="icon">🍽️</span>추천 음식점{% if has_places %} · Google Places{% endif %}</div>
+    {% if restaurants %}
+    <div class="places-grid">
+      {% for r in restaurants %}
+      <div class="place-card">
+        <div class="p-name">{{ r.name }}</div>
+        <div class="p-addr">📍 {{ r.address }}</div>
+        <div>
+          <span class="p-rating">⭐ {{ "%.1f"|format(r.rating) }} <span style="font-weight:400;color:var(--muted);">({{ "{:,}".format(r.review_count) }})</span></span>
+          {% if r.price_level >= 0 %}<span class="p-price">{{ ['무료','₩','₩₩','₩₩₩','₩₩₩₩'][r.price_level] }}</span>{% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="no-places">
+      {% if has_places %}
+      ⚠️ Places API 오류 또는 검색 결과가 없습니다.
+      {% else %}
+      🔑 GOOGLE_PLACES_KEY 환경변수를 설정하면 실제 음식점 정보를 볼 수 있습니다.<br>
+      <code style="font-size:.8rem;opacity:.7;">export GOOGLE_PLACES_KEY=your_key</code>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- 관광지 (Google Places) -->
+  <div class="section">
+    <div class="section-title"><span class="icon">🗺️</span>추천 관광지{% if has_places %} · Google Places{% endif %}</div>
+    {% if attractions %}
+    <div class="places-grid">
+      {% for a in attractions %}
+      <div class="place-card">
+        <div class="p-name">{{ a.name }}</div>
+        <div class="p-addr">📍 {{ a.address }}</div>
+        <span class="p-rating">⭐ {{ "%.1f"|format(a.rating) }} <span style="font-weight:400;color:var(--muted);">({{ "{:,}".format(a.review_count) }})</span></span>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="no-places">
+      {% if has_places %}
+      ⚠️ Places API 오류 또는 검색 결과가 없습니다.
+      {% else %}
+      🔑 GOOGLE_PLACES_KEY 환경변수를 설정하면 실제 관광지 정보를 볼 수 있습니다.
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- 현지 꿀팁 -->
+  {% if itinerary.tips %}
+  <div class="section">
+    <div class="section-title"><span class="icon">💡</span>현지 꿀팁</div>
+    <div class="card">
+      <div class="card-inner">
+        <ul class="tip-list">
+          {% for tip in itinerary.tips %}
+          <li><span>✔</span><span>{{ tip }}</span></li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- 짐 체크리스트 -->
+  {% if itinerary.packing %}
+  <div class="section">
+    <div class="section-title"><span class="icon">🎒</span>짐 체크리스트</div>
+    <div class="card">
+      <div class="card-inner">
+        <ul class="pack-list">
+          {% for item in itinerary.packing %}
+          <li><span>☐</span><span>{{ item }}</span></li>
+          {% endfor %}
+          <li><span>☐</span><span>여권 (유효기간 6개월 이상)</span></li>
+          <li><span>☐</span><span>여행자 보험 가입 확인</span></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- 현지 기본 정보 -->
+  <div class="section">
+    <div class="section-title"><span class="icon">🌍</span>현지 기본 정보</div>
+    <div class="card">
+      <div class="card-inner">
+        <div class="info-grid">
+          <div class="info-cell">
+            <div class="i-label">💱 통화</div>
+            <div class="i-val">{{ itinerary.dest_info.currency }}</div>
+          </div>
+          <div class="info-cell">
+            <div class="i-label">🏧 환전 팁</div>
+            <div class="i-val">{{ itinerary.dest_info.exchange_tip }}</div>
+          </div>
+          <div class="info-cell">
+            <div class="i-label">🚇 교통</div>
+            <div class="i-val">{{ itinerary.dest_info.transport }}</div>
+          </div>
+          <div class="info-cell">
+            <div class="i-label">🔌 플러그</div>
+            <div class="i-val">{{ itinerary.dest_info.plug }}</div>
+          </div>
+          <div class="info-cell">
+            <div class="i-label">🕐 시차</div>
+            <div class="i-val">{{ itinerary.dest_info['시차'] }}</div>
+          </div>
+          <div class="info-cell">
+            <div class="i-label">☀️ 날씨 팁</div>
+            <div class="i-val">{{ itinerary.dest_info['계절_팁'] }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <a href="/" class="new-plan-btn">🗺️ 새 여행 계획 세우기</a>
+
+</div><!-- /container -->
+
+<script>
+  function toggleDay(card) {
+    card.classList.toggle('open');
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+
+# 환경변수
+.env
+.env.*
+
+# Claude Code 내부 디렉토리
+.claude/
+
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/

@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI 여행 플래너</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --primary: #3B82F6;
+      --primary-dark: #1D4ED8;
+      --success: #10B981;
+      --warning: #F59E0B;
+      --danger: #EF4444;
+      --surface: #fff;
+      --bg: #EFF6FF;
+      --text: #1E293B;
+      --muted: #64748B;
+      --border: #CBD5E1;
+      --radius: 14px;
+      --shadow: 0 4px 24px rgba(59,130,246,.12);
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      min-height: 100vh;
+      background: linear-gradient(135deg, #1D4ED8 0%, #0EA5E9 50%, #06B6D4 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px 16px;
+    }
+
+    .card {
+      background: var(--surface);
+      border-radius: var(--radius);
+      box-shadow: 0 20px 60px rgba(0,0,0,.2);
+      width: 100%;
+      max-width: 640px;
+      overflow: hidden;
+    }
+
+    .card-header {
+      background: linear-gradient(135deg, #1D4ED8, #0EA5E9);
+      padding: 36px 32px 28px;
+      color: #fff;
+      text-align: center;
+    }
+    .card-header .emoji { font-size: 48px; display: block; margin-bottom: 10px; }
+    .card-header h1 { font-size: 1.75rem; font-weight: 700; letter-spacing: -.5px; }
+    .card-header p  { margin-top: 6px; opacity: .85; font-size: .95rem; }
+
+    .card-body { padding: 28px 32px 32px; }
+
+    .error-box {
+      background: #FEF2F2; border: 1px solid #FECACA;
+      border-radius: 8px; padding: 12px 16px;
+      color: #B91C1C; font-size: .9rem; margin-bottom: 20px;
+    }
+
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    @media (max-width: 500px) { .row { grid-template-columns: 1fr; } }
+
+    .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+    .field label {
+      font-size: .8rem; font-weight: 600;
+      color: var(--muted); text-transform: uppercase; letter-spacing: .5px;
+    }
+    .field input, .field select {
+      padding: 11px 14px; border: 1.5px solid var(--border);
+      border-radius: 9px; font-size: .95rem; color: var(--text);
+      background: #F8FAFC; transition: border-color .15s, box-shadow .15s;
+      outline: none;
+    }
+    .field input:focus, .field select:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(59,130,246,.15);
+      background: #fff;
+    }
+
+    .style-group { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 20px; }
+    .style-option { position: relative; }
+    .style-option input[type=radio] { position: absolute; opacity: 0; width: 0; height: 0; }
+    .style-option label {
+      display: flex; flex-direction: column; align-items: center;
+      gap: 6px; padding: 14px 8px;
+      border: 2px solid var(--border); border-radius: 10px;
+      cursor: pointer; transition: all .15s;
+      font-size: .85rem; font-weight: 500; color: var(--muted);
+    }
+    .style-option label .icon { font-size: 1.8rem; }
+    .style-option input:checked + label {
+      border-color: var(--primary); background: #EFF6FF; color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(59,130,246,.12);
+    }
+    .style-option label:hover { border-color: #93C5FD; }
+
+    .label-row {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 8px;
+    }
+    .label-row span { font-size: .8rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+
+    .btn {
+      width: 100%; padding: 15px; border: none; border-radius: 10px;
+      font-size: 1.05rem; font-weight: 700; cursor: pointer;
+      transition: all .15s; display: flex; align-items: center; justify-content: center; gap: 8px;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+      color: #fff; box-shadow: 0 4px 14px rgba(59,130,246,.4);
+    }
+    .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(59,130,246,.5); }
+    .btn-primary:active { transform: translateY(0); }
+
+    .loading-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(15,23,42,.7); z-index: 999;
+      flex-direction: column; align-items: center; justify-content: center; gap: 20px;
+      color: #fff;
+    }
+    .spinner {
+      width: 52px; height: 52px; border: 4px solid rgba(255,255,255,.3);
+      border-top-color: #fff; border-radius: 50%;
+      animation: spin .8s linear infinite;
+    }
+    .loading-text { font-size: 1.1rem; font-weight: 600; }
+    .loading-sub  { font-size: .9rem; opacity: .7; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .footer { text-align: center; margin-top: 20px; color: rgba(255,255,255,.65); font-size: .82rem; }
+  </style>
+</head>
+<body>
+
+<div class="card">
+  <div class="card-header">
+    <span class="emoji">✈️</span>
+    <h1>AI 여행 플래너</h1>
+    <p>출발지와 여행지를 입력하면 항공·호텔·날씨·일정을 한번에</p>
+  </div>
+
+  <div class="card-body">
+    {% if error %}
+    <div class="error-box">⚠️ 오류 발생: {{ error }}</div>
+    {% endif %}
+
+    <form action="/plan" method="post" id="planForm">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="row">
+        <div class="field">
+          <label>출발지</label>
+          <input type="text" name="origin" placeholder="서울" value="서울" required>
+        </div>
+        <div class="field">
+          <label>여행지</label>
+          <input type="text" name="destination" placeholder="도쿄" required>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="field">
+          <label>출발 날짜</label>
+          <input type="date" name="start_date" value="{{ today }}" min="{{ today }}" required>
+        </div>
+        <div class="field">
+          <label>숙박 일수</label>
+          <input type="number" name="nights" value="4" min="1" max="30" required>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="field">
+          <label>여행 인원</label>
+          <input type="number" name="passengers" value="2" min="1" max="20" required>
+        </div>
+        <div class="field">
+          <label>총 예산 (원)</label>
+          <input type="number" name="budget" value="3000000" min="100000" step="100000" required>
+        </div>
+      </div>
+
+      <div class="label-row">
+        <span>여행 스타일</span>
+      </div>
+      <div class="style-group">
+        <div class="style-option">
+          <input type="radio" id="s1" name="style" value="휴양" checked>
+          <label for="s1"><span class="icon">🏖</span>휴양</label>
+        </div>
+        <div class="style-option">
+          <input type="radio" id="s2" name="style" value="액티비티">
+          <label for="s2"><span class="icon">🏄</span>액티비티</label>
+        </div>
+        <div class="style-option">
+          <input type="radio" id="s3" name="style" value="맛집">
+          <label for="s3"><span class="icon">🍜</span>맛집</label>
+        </div>
+      </div>
+
+      <button type="submit" class="btn btn-primary">
+        🗺️ 여행 일정 생성하기
+      </button>
+    </form>
+  </div>
+</div>
+
+<p class="footer">항공·호텔 Mock 데이터 | 날씨 Open-Meteo | 장소 Google Places</p>
+
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="spinner"></div>
+  <div class="loading-text">✈️ 여행 일정을 만들고 있어요</div>
+  <div class="loading-sub">항공편 · 호텔 · 날씨 · 관광지 검색 중...</div>
+</div>
+
+<script>
+  const FORM_KEY = 'travel_form_state';
+  const FIELDS   = ['origin', 'destination', 'start_date', 'nights', 'passengers', 'budget'];
+
+  function saveForm() {
+    const state = {};
+    FIELDS.forEach(name => {
+      const el = document.querySelector(`[name="${name}"]`);
+      if (el) state[name] = el.value;
+    });
+    const styleEl = document.querySelector('input[name="style"]:checked');
+    if (styleEl) state.style = styleEl.value;
+    try { localStorage.setItem(FORM_KEY, JSON.stringify(state)); } catch {}
+  }
+
+  function restoreForm() {
+    let state;
+    try { state = JSON.parse(localStorage.getItem(FORM_KEY) || 'null'); } catch {}
+    if (!state) return;
+    FIELDS.forEach(name => {
+      const el = document.querySelector(`[name="${name}"]`);
+      if (el && state[name] != null) el.value = state[name];
+    });
+    if (state.style) {
+      const radio = document.querySelector(`input[name="style"][value="${state.style}"]`);
+      if (radio) radio.checked = true;
+    }
+  }
+
+  restoreForm();
+
+  document.getElementById('planForm').addEventListener('submit', function() {
+    saveForm();
+    document.getElementById('loadingOverlay').style.display = 'flex';
+  });
+
+  // 로딩 오버레이 해제 — 뒤로가기 시 bfcache에서 복원될 때
+  window.addEventListener('pageshow', function(e) {
+    if (e.persisted) {
+      document.getElementById('loadingOverlay').style.display = 'none';
+    }
+  });
+</script>
+</body>
+</html>

@@ -292,7 +292,7 @@
           {% if f == selected_flight %}<span class="selected-badge">선택됨</span>{% endif %}
         </div>
         <div class="route">{{ f.departure }} → {{ f.arrival }}</div>
-        <div class="meta">출발 {{ f.dep_time }} · 도착 {{ f.arr_time }} · 소요 {{ f.duration }} · 잔여 {{ f.seats_left }}석</div>
+        <div class="meta">출발 {{ f.dep_time }} · 도착 {{ f.arr_time }} · 소요 {{ f.duration }}{% if f.seats_left <= 9 %} · <span style="color:var(--danger);font-weight:600;">잔여 {{ f.seats_left }}석</span>{% else %} · 잔여 {{ f.seats_left }}석{% endif %}</div>
         <div class="price">{{ "{:,}".format(f.price) }}원</div>
       </div>
       {% endfor %}

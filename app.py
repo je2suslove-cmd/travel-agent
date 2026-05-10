@@ -66,7 +66,7 @@ def plan():
         )
 
         # 1. 항공편 에이전트
-        flights = flight_agent.run(origin, destination, passengers)
+        flights = flight_agent.run(origin, destination, passengers, start_date)
         if not flights:
             return render_template("index.html", today=today,
                                    error=f"'{origin} → {destination}' 노선의 항공편을 찾을 수 없습니다.")

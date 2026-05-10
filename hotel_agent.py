@@ -1,9 +1,14 @@
 """
 호텔 검색 에이전트
-Mock 데이터 기반 호텔 추천 — search_hotels() 내부를 Booking.com/Hotels.com API로 교체 가능
+Google Places Nearby Search API로 실제 호텔 이름·평점·위치 조회
+GOOGLE_PLACES_KEY 없으면 Mock 데이터로 자동 폴백
 """
 from __future__ import annotations
 
+import json
+import os
+import urllib.parse
+import urllib.request
 from dataclasses import dataclass
 
 
@@ -212,36 +217,175 @@ _HOTEL_DB: dict[str, dict[str, list[dict]]] = {
 
 
 # ─────────────────────────────────────────────
-# 검색·출력·비용 계산
+# Google Places 기반 실제 호텔 조회
 # ─────────────────────────────────────────────
 
-def search_hotels(destination: str, nights: int, budget_per_night: int, style: str) -> list[Hotel]:
+# 목적지별 중심 좌표
+_DEST_COORDS: dict[str, tuple[float, float]] = {
+    "도쿄":     (35.6762,  139.6503),
+    "오사카":   (34.6937,  135.5023),
+    "방콕":     (13.7563,  100.5018),
+    "파리":     (48.8566,    2.3522),
+    "제주":     (33.4996,  126.5312),
+    "싱가포르": ( 1.3521,  103.8198),
+    "발리":     (-8.3405,  115.0920),
+    "홍콩":     (22.3193,  114.1694),
+    "뉴욕":     (40.7128,  -74.0060),
+    "다낭":     (16.0544,  108.2022),
+}
+
+# 목적지 × 별점별 1박 기준가 (KRW)
+_DEST_BASE_PRICE: dict[str, dict[int, int]] = {
+    "도쿄":     {5: 480_000, 4: 240_000, 3: 130_000, 2: 75_000},
+    "오사카":   {5: 390_000, 4: 200_000, 3: 110_000, 2: 65_000},
+    "방콕":     {5: 420_000, 4: 180_000, 3: 100_000, 2: 55_000},
+    "파리":     {5: 850_000, 4: 450_000, 3: 270_000, 2: 160_000},
+    "제주":     {5: 420_000, 4: 210_000, 3: 120_000, 2: 70_000},
+    "싱가포르": {5: 750_000, 4: 370_000, 3: 200_000, 2: 110_000},
+    "발리":     {5: 550_000, 4: 270_000, 3: 140_000, 2: 80_000},
+    "홍콩":     {5: 850_000, 4: 380_000, 3: 210_000, 2: 120_000},
+    "뉴욕":     {5: 2_000_000, 4: 750_000, 3: 480_000, 2: 300_000},
+    "다낭":     {5: 550_000, 4: 260_000, 3: 140_000, 2: 80_000},
+}
+_DEFAULT_BASE_PRICE: dict[int, int] = {5: 500_000, 4: 250_000, 3: 130_000, 2: 70_000}
+
+# 별점별 기본 어메니티
+_AMENITIES_BY_STARS: dict[int, list[str]] = {
+    5: ["수영장", "스파", "피트니스", "레스토랑", "컨시어지"],
+    4: ["피트니스", "레스토랑", "룸서비스"],
+    3: ["레스토랑", "조식 포함"],
+    2: ["조식 포함", "기본 시설"],
+}
+
+
+def _estimate_stars(rating: float) -> int:
+    if rating >= 4.5: return 5
+    if rating >= 4.1: return 4
+    if rating >= 3.7: return 3
+    return 2
+
+
+def _estimate_price(destination: str, stars: int, review_count: int) -> int:
+    base = _DEST_BASE_PRICE.get(destination, _DEFAULT_BASE_PRICE)[stars]
+    # 리뷰 많을수록 유명 = 약간 높은 가격 (±20%)
+    popularity = min(review_count / 5000, 1.0)
+    return int(base * (1.0 + popularity * 0.2))
+
+
+def _shorten_address(vicinity: str) -> str:
+    """'6-chōme-6-2 Nishishinjuku, Shinjuku City' → 'Shinjuku City' 형태로 단축"""
+    parts = [p.strip() for p in vicinity.split(",")]
+    # 숫자로 시작하지 않고 ASCII 비중이 높은 파트를 뒤에서부터 선택
+    for part in reversed(parts):
+        if not part:
+            continue
+        ascii_ratio = sum(1 for c in part if ord(c) < 128) / len(part)
+        starts_with_digit = part[0].isdigit()
+        if ascii_ratio >= 0.6 and not starts_with_digit:
+            return part
+    return parts[-1] if parts else vicinity
+
+
+def _fetch_hotels_places(destination: str, nights: int,
+                          budget_per_night: int) -> list[Hotel]:
+    api_key = os.environ.get("GOOGLE_PLACES_KEY", "").strip()
+    coords  = _DEST_COORDS.get(destination)
+    if not api_key or not coords:
+        return []
+
+    params = {
+        "location": f"{coords[0]},{coords[1]}",
+        "radius":   "12000",
+        "type":     "lodging",
+        "language": "ko",
+        "rankby":   "prominence",
+        "key":      api_key,
+    }
+    url = "https://maps.googleapis.com/maps/api/place/nearbysearch/json?" + urllib.parse.urlencode(params)
+    try:
+        with urllib.request.urlopen(url, timeout=10) as resp:
+            data = json.loads(resp.read())
+        if data.get("status") not in ("OK", "ZERO_RESULTS"):
+            return []
+        results = data.get("results", [])
+    except Exception as exc:
+        print(f"  ⚠️  Places 호텔 API 오류: {exc}")
+        return []
+
+    # 평점 3.8+ 필터 → 리뷰수 가중 정렬
+    filtered = [
+        r for r in results
+        if r.get("rating", 0) >= 3.8 and r.get("user_ratings_total", 0) >= 50
+    ]
+    filtered.sort(key=lambda r: (r.get("rating", 0) * 0.6 +
+                                  min(r.get("user_ratings_total", 0) / 10000, 1) * 0.4),
+                  reverse=True)
+
+    hotels: list[Hotel] = []
+    for r in filtered[:8]:
+        rating   = r.get("rating", 4.0)
+        reviews  = r.get("user_ratings_total", 0)
+        stars    = _estimate_stars(rating)
+        ppn      = _estimate_price(destination, stars, reviews)
+        vicinity = r.get("vicinity", destination)
+
+        hotels.append(Hotel(
+            name            = r["name"],
+            stars           = stars,
+            location        = _shorten_address(vicinity),
+            price_per_night = ppn,
+            amenities       = _AMENITIES_BY_STARS[stars],
+            rating          = rating,
+            total_price     = ppn * nights,
+        ))
+
+    return hotels
+
+
+# ─────────────────────────────────────────────
+# Mock 폴백 검색
+# ─────────────────────────────────────────────
+
+def _search_mock(destination: str, nights: int,
+                 budget_per_night: int, style: str) -> list[Hotel]:
     style_db = _HOTEL_DB.get(style, _HOTEL_DB["휴양"])
-    raw = style_db.get(destination)
-    if not raw:
-        raw = [
-            dict(name=f"{destination} 럭셔리 호텔",   stars=5, location=f"{destination} 중심가", ppn=450_000, amenities=["수영장", "스파", "레스토랑"], rating=4.8),
-            dict(name=f"{destination} 비즈니스 호텔",  stars=4, location=f"{destination} 시내",   ppn=220_000, amenities=["피트니스", "레스토랑"],       rating=4.4),
-            dict(name=f"{destination} 이코노미 호텔",  stars=3, location=f"{destination} 외곽",   ppn=115_000, amenities=["기본 시설"],                  rating=4.0),
-        ]
+    raw = style_db.get(destination) or [
+        dict(name=f"{destination} 럭셔리 호텔",  stars=5, location=f"{destination} 중심가", ppn=450_000, amenities=["수영장", "스파", "레스토랑"], rating=4.8),
+        dict(name=f"{destination} 비즈니스 호텔", stars=4, location=f"{destination} 시내",   ppn=220_000, amenities=["피트니스", "레스토랑"],       rating=4.4),
+        dict(name=f"{destination} 이코노미 호텔", stars=3, location=f"{destination} 외곽",   ppn=115_000, amenities=["기본 시설"],                  rating=4.0),
+    ]
     hotels = [
-        Hotel(
-            name=r["name"], stars=r["stars"], location=r["location"],
-            price_per_night=r["ppn"], amenities=r["amenities"], rating=r["rating"],
-            total_price=r["ppn"] * nights,
-        )
+        Hotel(name=r["name"], stars=r["stars"], location=r["location"],
+              price_per_night=r["ppn"], amenities=r["amenities"],
+              rating=r["rating"], total_price=r["ppn"] * nights)
         for r in raw
     ]
     in_budget = [h for h in hotels if h.price_per_night <= budget_per_night]
     return (in_budget if in_budget else hotels)[:5]
 
 
+# ─────────────────────────────────────────────
+# 검색·출력·비용 계산
+# ─────────────────────────────────────────────
+
+def search_hotels(destination: str, nights: int,
+                  budget_per_night: int, style: str) -> list[Hotel]:
+    hotels = _fetch_hotels_places(destination, nights, budget_per_night)
+    if len(hotels) >= 3:
+        # 예산 내 우선 → 전체로 폴백
+        in_budget = [h for h in hotels if h.price_per_night <= budget_per_night]
+        return (in_budget if in_budget else hotels)[:5]
+    return _search_mock(destination, nights, budget_per_night, style)
+
+
 def display_hotels(hotels: list[Hotel], nights: int, ppn_budget: int) -> None:
+    api_key = os.environ.get("GOOGLE_PLACES_KEY", "")
+    src     = "Google Places 실시간" if api_key else "Mock 데이터"
     print("\n" + "━" * 62)
-    print("  🏨  호텔 추천")
+    print(f"  🏨  호텔 추천 ({src})")
     print("━" * 62)
     for i, h in enumerate(hotels, 1):
-        tag = "✅ 예산 내" if h.price_per_night <= ppn_budget else "⚠️ 예산 초과"
+        tag   = "✅ 예산 내" if h.price_per_night <= ppn_budget else "⚠️ 예산 초과"
         stars = "★" * h.stars + "☆" * (5 - h.stars)
         print(f"\n  [{i}] {stars}  {h.name}  {tag}")
         print(f"      📍 {h.location}  |  평점 {h.rating}/5.0")
@@ -249,8 +393,9 @@ def display_hotels(hotels: list[Hotel], nights: int, ppn_budget: int) -> None:
         print(f"      🛎  {' · '.join(h.amenities)}")
 
 
-def calculate_costs(flight_price: int, hotel: Hotel, nights: int, passengers: int, budget: int) -> dict:
-    misc = passengers * nights * 80_000
+def calculate_costs(flight_price: int, hotel: Hotel,
+                    nights: int, passengers: int, budget: int) -> dict:
+    misc  = passengers * nights * 80_000
     total = flight_price + hotel.total_price + misc
     return dict(
         flight=flight_price, hotel=hotel.total_price,
@@ -260,5 +405,6 @@ def calculate_costs(flight_price: int, hotel: Hotel, nights: int, passengers: in
     )
 
 
-def run(destination: str, nights: int, budget_per_night: int, style: str) -> list[Hotel]:
+def run(destination: str, nights: int,
+        budget_per_night: int, style: str) -> list[Hotel]:
     return search_hotels(destination, nights, budget_per_night, style)

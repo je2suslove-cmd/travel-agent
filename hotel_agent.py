@@ -372,9 +372,11 @@ def search_hotels(destination: str, nights: int,
                   budget_per_night: int, style: str) -> list[Hotel]:
     hotels = _fetch_hotels_places(destination, nights, budget_per_night)
     if len(hotels) >= 3:
-        # 예산 내 우선 → 전체로 폴백
-        in_budget = [h for h in hotels if h.price_per_night <= budget_per_night]
-        return (in_budget if in_budget else hotels)[:5]
+        # 예산 내 호텔 먼저, 그 뒤 예산 초과 호텔 — 합쳐서 최대 5개 표시
+        in_budget  = [h for h in hotels if h.price_per_night <= budget_per_night]
+        over_budget = [h for h in hotels if h.price_per_night > budget_per_night]
+        merged = in_budget + over_budget
+        return merged[:5]
     return _search_mock(destination, nights, budget_per_night, style)
 
 

@@ -6,6 +6,7 @@ Google Places Text Search API (Legacy) 사용
 from __future__ import annotations
 
 import json
+import re
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
@@ -55,6 +56,15 @@ _DEST_COORDS: dict[str, tuple[float, float]] = {
 _SEARCH_RADIUS = 15_000  # 15km
 
 
+def _brand_key(name: str) -> str:
+    """체인점 중복 제거용 브랜드 키: 괄호·지점명·지역명 제거 후 정규화"""
+    key = re.sub(r'[\(（][^)）]*[\)）]', '', name)          # (구 나베조) 등 괄호 제거
+    key = re.sub(r'\s+\S*(?:점|店|支店|branch)\S*', '', key)  # 시부야점 등 지점명 제거
+    key = re.sub(r'(?<=[A-Za-z])\s+[\w가-힣ぁ-んァ-ン]+\s*$', '', key)  # 영문 뒤 지역어 제거
+    key = re.sub(r'[^\w가-힣ぁ-んァ-ン]', '', key).lower()
+    return key or re.sub(r'[^\w가-힣ぁ-んァ-ン]', '', name).lower()
+
+
 # ─────────────────────────────────────────────
 # API 호출  (실제 API 교체 지점 — Google Places)
 # ─────────────────────────────────────────────
@@ -85,38 +95,58 @@ def _places_search(query: str, api_key: str, place_type: str = "",
 
 
 def search_restaurants(destination: str, api_key: str) -> list[Restaurant]:
-    """여행지 음식점 검색 — 평점 높은 순"""
+    """여행지 음식점 검색 — 평점 높은 순, 동일 브랜드 중복 제거"""
     coords = _DEST_COORDS.get(destination)
     results = _places_search("맛집 레스토랑", api_key, "restaurant", location=coords)
-    items = [
-        Restaurant(
-            name=r["name"],
-            address=r.get("formatted_address", r.get("vicinity", "주소 정보 없음")),
-            rating=r.get("rating", 0.0),
-            review_count=r.get("user_ratings_total", 0),
-            price_level=r.get("price_level", -1),
-            place_id=r.get("place_id", ""),
-        )
-        for r in results if r.get("name")
-    ]
-    return sorted(items, key=lambda x: x.rating, reverse=True)[:10]
+    items = sorted(
+        [
+            Restaurant(
+                name=r["name"],
+                address=r.get("formatted_address", r.get("vicinity", "주소 정보 없음")),
+                rating=r.get("rating", 0.0),
+                review_count=r.get("user_ratings_total", 0),
+                price_level=r.get("price_level", -1),
+                place_id=r.get("place_id", ""),
+            )
+            for r in results if r.get("name")
+        ],
+        key=lambda x: x.rating, reverse=True,
+    )
+    seen: set[str] = set()
+    deduped: list[Restaurant] = []
+    for item in items:
+        key = _brand_key(item.name)
+        if key not in seen:
+            seen.add(key)
+            deduped.append(item)
+    return deduped[:10]
 
 
 def search_attractions(destination: str, api_key: str) -> list[Attraction]:
-    """여행지 관광지 검색 — 평점 높은 순"""
+    """여행지 관광지 검색 — 평점 높은 순, 동일 명소 중복 제거"""
     coords = _DEST_COORDS.get(destination)
     results = _places_search("관광지 명소", api_key, "tourist_attraction", location=coords)
-    items = [
-        Attraction(
-            name=r["name"],
-            address=r.get("formatted_address", r.get("vicinity", "주소 정보 없음")),
-            rating=r.get("rating", 0.0),
-            review_count=r.get("user_ratings_total", 0),
-            place_id=r.get("place_id", ""),
-        )
-        for r in results if r.get("name")
-    ]
-    return sorted(items, key=lambda x: x.rating, reverse=True)[:10]
+    items = sorted(
+        [
+            Attraction(
+                name=r["name"],
+                address=r.get("formatted_address", r.get("vicinity", "주소 정보 없음")),
+                rating=r.get("rating", 0.0),
+                review_count=r.get("user_ratings_total", 0),
+                place_id=r.get("place_id", ""),
+            )
+            for r in results if r.get("name")
+        ],
+        key=lambda x: x.rating, reverse=True,
+    )
+    seen: set[str] = set()
+    deduped: list[Attraction] = []
+    for item in items:
+        key = _brand_key(item.name)
+        if key not in seen:
+            seen.add(key)
+            deduped.append(item)
+    return deduped[:10]
 
 
 # ─────────────────────────────────────────────

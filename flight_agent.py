@@ -130,6 +130,15 @@ def _fetch_api(origin: str, destination: str,
     if not entries:
         return []
 
+    # 요청 날짜 기준 ±7일 이내 항목만 사용 (API가 다른 달 데이터를 반환하는 경우 방지)
+    req_dt = datetime.fromisoformat(depart_date)
+    entries = {
+        d: e for d, e in entries.items()
+        if abs((datetime.fromisoformat(d) - req_dt).days) <= 7
+    }
+    if not entries:
+        return []
+
     # 요청 날짜 항목 우선, 나머지는 최저가 순으로 채워 최대 3개
     selected: dict[str, dict] = {}
     if depart_date in entries:
